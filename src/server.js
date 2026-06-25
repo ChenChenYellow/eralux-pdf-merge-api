@@ -44,24 +44,50 @@ app.get("/health", (req, res) => {
 
 app.post("/api/pdf/merge", validateApiKey, async (req, res) => {
   try {
-    const files = req.body.files;
+    let inputFiles = [];
 
-    if (!Array.isArray(files) || files.length === 0) {
+    // Format 1: Business Central current format
+    // {
+    //   "labels": ["base64_1", "base64_2"]
+    // }
+    if (Array.isArray(req.body.labels)) {
+      inputFiles = req.body.labels.map((base64, index) => ({
+        fileName: `label${index + 1}.pdf`,
+        contentBase64: base64
+      }));
+    }
+
+    // Format 2: Generic format
+    // {
+    //   "files": [
+    //     { "fileName": "a.pdf", "contentBase64": "base64_1" }
+    //   ]
+    // }
+    if (Array.isArray(req.body.files)) {
+      inputFiles = req.body.files;
+    }
+
+    if (!Array.isArray(inputFiles) || inputFiles.length === 0) {
       return res.status(400).json({
-        error: "files is required and must be a non-empty array"
+        error: "labels or files is required and must be a non-empty array"
       });
     }
 
     const mergedPdf = await PDFDocument.create();
 
-    for (const file of files) {
+    for (const file of inputFiles) {
       if (!file.contentBase64) {
         return res.status(400).json({
-          error: "Each file must contain contentBase64"
+          error: "Each file must contain contentBase64",
+          fileName: file.fileName || null
         });
       }
 
-      const pdfBytes = Buffer.from(file.contentBase64, "base64");
+      const cleanBase64 = file.contentBase64.includes(",")
+        ? file.contentBase64.split(",").pop()
+        : file.contentBase64;
+
+      const pdfBytes = Buffer.from(cleanBase64, "base64");
 
       let pdf;
       try {
@@ -86,6 +112,11 @@ app.post("/api/pdf/merge", validateApiKey, async (req, res) => {
 
     res.json({
       fileName: "merged.pdf",
+
+      // For your current BC code
+      mergedPdfBase64: mergedBase64,
+
+      // For generic API usage
       contentBase64: mergedBase64
     });
   } catch (error) {
@@ -97,7 +128,6 @@ app.post("/api/pdf/merge", validateApiKey, async (req, res) => {
     });
   }
 });
-
 app.listen(PORT, () => {
   console.log(`PDF Merge API running on port ${PORT}`);
 });
